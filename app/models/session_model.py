@@ -46,6 +46,10 @@ class UserSession(BaseModel):
     def session_id(self) -> str:
         return str(self.id) if self.id else None
 
+    @property
+    def questions_answered_count(self) -> int:
+        return len(self.answered_questions)
+
     model_config = {
         "populate_by_name": True,
         "json_encoders": {ObjectId: str},
@@ -65,6 +69,7 @@ class SessionResponse(BaseModel):
     correct_count: int
     wrong_count: int
     answered_questions: List[str]
+    questions_answered_count: int
     topics_missed: List[str]
     current_question: Optional[str] = None
     status: str

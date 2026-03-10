@@ -52,6 +52,7 @@ def _serialize_session(doc: dict) -> SessionResponse:
         correct_count=doc.get("correct_count", 0),
         wrong_count=doc.get("wrong_count", 0),
         answered_questions=doc.get("answered_questions", []),
+        questions_answered_count=len(doc.get("answered_questions", [])),
         topics_missed=doc.get("topics_missed", []),
         current_question=doc.get("current_question"),
         status=doc.get("status", "active"),
