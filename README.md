@@ -1,119 +1,192 @@
 # AI-Driven Adaptive Diagnostic Engine
 
-A production-grade backend for an intelligent adaptive testing system. This engine leverages **Item Response Theory (IRT)** to dynamically adjust difficulty and **OpenAI GPT-4** to provide personalized study insights based on student performance.
+A production-grade backend for a **1-D adaptive testing system** that determines a student's ability level by dynamically selecting questions based on previous answers. Built with **FastAPI**, **MongoDB**, and **OpenAI**.
 
 ---
 
-## 🏗️ Project Overview
+## Project Overview
 
-The **AI-Driven Adaptive Diagnostic Engine** is designed to provide a tailored testing experience. Unlike linear tests, this engine estimates a student's latent ability in real-time and selects questions that offer the maximum information gain. Upon completion, it generates a structured 3-step study plan to address identified knowledge gaps.
+This engine implements a **Computer Adaptive Test (CAT)** using:
+
+- **Item Response Theory (IRT)** to estimate student ability in real-time.
+- **OpenAI GPT** to generate personalized study plans after test completion.
+
+The test adapts after every answer — correct responses increase difficulty, incorrect responses decrease it — converging on the student's true ability level.
 
 ---
 
-## 🧩 Architecture Diagram
+## System Architecture
 
-```mermaid
-graph TD
-    User((User)) -->|REST API| FastAPI[FastAPI Backend]
-
-    subgraph Services
-        FastAPI -->|Ability Update| IRT[Adaptive Engine - IRT]
-        FastAPI -->|Study Plan| AI[AI Insights - OpenAI]
-    end
-
-    subgraph Data Layer
-        FastAPI -->|Query/Store| MongoDB[(MongoDB Atlas)]
-    end
-
-    IRT -->|Select Next Question| MongoDB
-    AI -->|Performance Analysis| User
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        CLIENT (Swagger / Frontend)          │
+└──────────────────────────────┬──────────────────────────────┘
+                               │  REST API
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     FastAPI Application                      │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │  /start-     │  │ /next-question/  │  │ /submit-     │  │
+│  │   session    │  │  {session_id}    │  │   answer     │  │
+│  └──────┬───────┘  └────────┬─────────┘  └──────┬───────┘  │
+│         │                   │                    │          │
+│         ▼                   ▼                    ▼          │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              SERVICES LAYER                          │   │
+│  │                                                      │   │
+│  │  ┌─────────────────────┐  ┌───────────────────────┐ │   │
+│  │  │  Adaptive Engine    │  │   AI Insights Service  │ │   │
+│  │  │  (IRT Algorithm)    │  │   (OpenAI GPT API)     │ │   │
+│  │  └─────────┬───────────┘  └──────────┬────────────┘ │   │
+│  └────────────┼─────────────────────────┼──────────────┘   │
+│               │                         │                   │
+│               ▼                         ▼                   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                MongoDB (Motor Async)                  │   │
+│  │   ┌────────────────┐    ┌────────────────────────┐   │   │
+│  │   │   questions    │    │    user_sessions        │   │   │
+│  │   └────────────────┘    └────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📊 MongoDB Schema
+## Adaptive Algorithm Explanation
 
-The system uses two primary collections with strict JSON schema validation:
+The engine uses the **1-Parameter Logistic (1PL) IRT Model**.
 
-### 1. `questions`
+### Probability of Correct Response
 
-| Field            | Type          | Description                            |
-| :--------------- | :------------ | :------------------------------------- |
-| `question`       | String        | The content of the question.           |
-| `options`        | Array[String] | 4 multiple-choice options.             |
-| `correct_answer` | String        | The exact value of the correct option. |
-| `difficulty`     | Double        | IRT difficulty parameter (0.1 to 1.0). |
-| `topic`          | String        | Subject category (e.g., Algebra).      |
+```
+P(correct) = 1 / (1 + e^-(θ - β))
+```
 
-### 2. `user_sessions`
+| Symbol | Meaning                         |
+| ------ | ------------------------------- |
+| θ      | Student ability estimate        |
+| β      | Question difficulty             |
+| P      | Probability of a correct answer |
 
-| Field                | Type          | Description                              |
-| :------------------- | :------------ | :--------------------------------------- |
-| `user_id`            | String        | Unique identifier for the student.       |
-| `ability_score`      | Double        | Current IRT ability estimate ($\theta$). |
-| `correct_count`      | Integer       | Total correct answers in session.        |
-| `answered_questions` | Array[ID]     | List of question ObjectIDs answered.     |
-| `topics_missed`      | Array[String] | Unique topics where user failed.         |
+### Ability Update Rule
 
----
+```
+θ_new = θ_old + α × (result − P)
+```
 
-## 🧠 Adaptive Algorithm Explanation (IRT)
+| Symbol | Meaning                      |
+| ------ | ---------------------------- |
+| α      | Learning rate (0.1)          |
+| result | 1 if correct, 0 if incorrect |
 
-The engine implements a **1-Parameter Logistic (1PL) Model** from Item Response Theory.
+**Clamped** to `[0.1, 1.0]`.
 
-### Probability of Correct Response ($P$):
+### Intuition
 
-$$P(\text{correct}) = \frac{1}{1 + e^{-(\theta - \beta)}}$$
-
-- **$\theta$ (Theta)**: User's estimated ability score.
-- **$\beta$ (Beta)**: Item difficulty level.
-
-### Ability Update Rule:
-
-The score is updated after every response using a learning rate ($\alpha$):
-$$\theta_{new} = \theta_{old} + \alpha \times (\text{result} - P)$$
-
-- **Result**: 1.0 if correct, 0.0 if incorrect.
-- **Clamping**: Ability is always maintained within the range $[0.1, 1.0]$.
+- ✅ Correct on a **hard** item → large ability increase
+- ✅ Correct on an **easy** item → small ability increase
+- ❌ Wrong on an **easy** item → large ability decrease
+- ❌ Wrong on a **hard** item → small ability decrease
 
 ---
 
-## 🚀 API Endpoints
+## MongoDB Schema
 
-| Method | Endpoint                  | Description                                   |
-| :----- | :------------------------ | :-------------------------------------------- |
-| `POST` | `/start-session`          | Initialize a test session ($\theta = 0.5$).   |
-| `GET`  | `/next-question/{id}`     | Return question closest to current $\theta$.  |
-| `POST` | `/submit-answer`          | Submit response, update $\theta$, and counts. |
-| `GET`  | `/questions/`             | List all available questions.                 |
-| `GET`  | `/sessions/{id}/insights` | Generate AI-powered 3-step study plan.        |
+### `questions` Collection
 
----
+| Field          | Type     | Description               |
+| -------------- | -------- | ------------------------- |
+| question       | String   | Question text             |
+| options        | [String] | 4 multiple-choice options |
+| correct_answer | String   | Correct option text       |
+| difficulty     | Float    | 0.1 – 1.0                 |
+| topic          | String   | Subject area              |
+| tags           | [String] | Descriptive labels        |
 
-## ⚙️ Running the Project
+### `user_sessions` Collection
 
-1. **Install Dependencies**: `pip install -r requirements.txt`
-2. **Environment**: Set `OPENAI_API_KEY` and `MONGODB_URL` in `.env`.
-3. **Database Setup**:
-   - Run `python scripts/setup_db_schemas.py` to initialize validation rules.
-   - Run `python seed/seed_questions.py` to populate GRE dataset.
-4. **Start Server**: `uvicorn app.main:app --reload`
-
----
-
-## 🛠️ AI Tools Used
-
-- **Antigravity (Google DeepMind)**: Core architect for code generation, schema design, and documentation.
-- **OpenAI GPT-4**: Backend intelligence for study plan generation and performance analysis.
-- **Mermaid.js**: For architectural visualization within documentation.
+| Field              | Type     | Description                  |
+| ------------------ | -------- | ---------------------------- |
+| user_id            | String   | Student identifier           |
+| ability_score      | Float    | Current IRT estimate (0.5)   |
+| correct_count      | Integer  | Total correct                |
+| wrong_count        | Integer  | Total incorrect              |
+| answered_questions | [String] | Answered question IDs        |
+| topics_missed      | [String] | Topics with wrong answers    |
+| current_question   | String   | Currently active question ID |
+| status             | String   | "active" or "completed"      |
 
 ---
 
-## 📝 AI Log
+## API Endpoints
 
-The development of this project was significantly accelerated using **Antigravity**. The transition from a blank canvas to a production-ready backend took less than 20 minutes of active agent collaboration.
+| Method | Path                          | Description                           |
+| ------ | ----------------------------- | ------------------------------------- |
+| POST   | `/start-session`              | Create session (ability = 0.5)        |
+| GET    | `/next-question/{session_id}` | Get next IRT-selected question        |
+| POST   | `/submit-answer`              | Submit answer, update ability via IRT |
+| GET    | `/study-plan/{session_id}`    | AI-generated 3-step study plan        |
+| GET    | `/questions/`                 | List all questions                    |
+| POST   | `/questions/`                 | Create a new question                 |
 
-- **Phase 1 (Architecture)**: Antigravity scaffolded the modular folder structure and implemented the Pydantic-MongoDB integration.
-- **Phase 2 (Logic)**: The IRT logistic model was precisely implemented and verified via automated script generation.
-- **Phase 3 (Optimization)**: Antigravity autonomously refactored the database layer to use formal JSON Schema validation via `pymongo`, ensuring data integrity beyond application logic.
-- **Phase 4 (Content)**: The 20-question GRE dataset was generated with varied difficulty distributions to test the adaptive engine's responsiveness.
+---
+
+## How to Run the Project
+
+```bash
+# 1. Clone
+git clone https://github.com/suvendukungfu/AI-Driven-Adaptive-Diagnostic-Engine.git
+cd AI-Driven-Adaptive-Diagnostic-Engine
+
+# 2. Virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Configure .env
+cp .env.example .env
+# Edit .env → set your OPENAI_API_KEY
+
+# 5. Seed the database (MongoDB must be running)
+python seed/seed_questions.py
+
+# 6. Start the server
+uvicorn app.main:app --reload
+
+# 7. Open docs
+# http://localhost:8000/docs
+```
+
+---
+
+## Example API Flow
+
+```
+1. POST /start-session          → { session_id: "abc123", ability_score: 0.5 }
+2. GET  /next-question/abc123   → { question: "What is 2+2?", difficulty: 0.5 }
+3. POST /submit-answer          → { is_correct: true, new_ability_score: 0.55 }
+4. GET  /next-question/abc123   → { question: "Solve x²-5x+6=0", difficulty: 0.6 }
+   ... repeat until 10 questions ...
+5. POST /submit-answer          → { message: "test completed" }
+6. GET  /study-plan/abc123      → { three_step_plan: [...] }
+```
+
+---
+
+## AI Log
+
+This project was built with the assistance of **Antigravity** (Google DeepMind's agentic AI coding assistant).
+
+| Phase            | What AI Did                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| **Architecture** | Scaffolded the modular project structure with clean separation of concerns.                 |
+| **IRT Engine**   | Implemented and documented the 1PL logistic model with step-by-step mathematical comments.  |
+| **Database**     | Designed MongoDB schemas with Pydantic validation and `pymongo` JSON Schema enforcement.    |
+| **API Design**   | Generated all FastAPI endpoints with proper response models and Swagger documentation.      |
+| **Dataset**      | Created 20 GRE-style questions across 4 topics with balanced difficulty distribution.       |
+| **Testing**      | Wrote comprehensive unit tests verifying IRT correctness, clamping, and question selection. |
+| **Study Plan**   | Integrated OpenAI GPT to generate personalized 3-step learning plans from session data.     |
+| **Deployment**   | Configured structured logging, global error handling, and pushed to GitHub.                 |
