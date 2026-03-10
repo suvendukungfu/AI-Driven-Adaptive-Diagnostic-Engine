@@ -17,32 +17,39 @@ The test adapts after every answer — correct responses increase difficulty, in
 
 ## System Architecture
 
-             +---------------------+
-             |      Client         |
-             | (Postman / Frontend)|
-             +----------+----------+
-                        |
-                        v
-               +------------------+
-               |    FastAPI API   |
-               |  Adaptive Engine |
-               +--------+---------+
-                        |
-        +---------------+---------------+
-        |                               |
-        v                               v
-
-+---------------+ +----------------+
-| MongoDB | | OpenAI API |
-| Questions DB | | Study Plan AI |
-+---------------+ +----------------+
-
-### Component Roles
-
-- **FastAPI**: Handles API requests, models validation using Pydantic, and routing.
-- **MongoDB**: Stores questions, user sessions, and performance tracking persistently.
-- **Adaptive Engine**: Calculates the user's ability score in real-time using Item Response Theory (IRT) and intelligently selects the next best question to maximize information gain.
-- **OpenAI API**: Acts as an "expert GRE tutor" to generate personalized, concise 3-step learning plans based on the student's performance data.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        CLIENT (Swagger / Frontend)          │
+└──────────────────────────────┬──────────────────────────────┘
+                               │  REST API
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     FastAPI Application                      │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────┐  │
+│  │  /start-     │  │ /next-question/  │  │ /submit-     │  │
+│  │   session    │  │  {session_id}    │  │   answer     │  │
+│  └──────┬───────┘  └────────┬─────────┘  └──────┬───────┘  │
+│         │                   │                    │          │
+│         ▼                   ▼                    ▼          │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              SERVICES LAYER                          │   │
+│  │                                                      │   │
+│  │  ┌─────────────────────┐  ┌───────────────────────┐ │   │
+│  │  │  Adaptive Engine    │  │   AI Insights Service  │ │   │
+│  │  │  (IRT Algorithm)    │  │   (OpenAI GPT API)     │ │   │
+│  │  └─────────┬───────────┘  └──────────┬────────────┘ │   │
+│  └────────────┼─────────────────────────┼──────────────┘   │
+│               │                         │                   │
+│               ▼                         ▼                   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                MongoDB (Motor Async)                  │   │
+│  │   ┌────────────────┐    ┌────────────────────────┐   │   │
+│  │   │   questions    │    │    user_sessions        │   │   │
+│  │   └────────────────┘    └────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
