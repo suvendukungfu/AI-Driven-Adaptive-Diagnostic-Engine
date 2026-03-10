@@ -70,7 +70,16 @@ class SessionResponse(BaseModel):
     status: str
 
 
+class SessionSummaryResponse(BaseModel):
+    """Bonus Feature - Response for GET /session-summary/{session_id}"""
+    ability_score: float
+    correct_answers: int
+    wrong_answers: int
+    weak_topics: List[str]
+
+
 class SubmitAnswerRequest(BaseModel):
+
     """Request body for POST /submit-answer."""
     session_id: str
     question_id: str

@@ -31,11 +31,7 @@ class StudyStep(BaseModel):
 
 class StudyPlanResponse(BaseModel):
     """Complete AI-generated study plan."""
-    user_id: str
-    summary: str
-    weak_areas: List[str]
-    three_step_plan: List[StudyStep]
-    estimated_time: str
+    study_plan: List[str]
 
 
 # ---------------------------------------------------------------------------
@@ -75,18 +71,21 @@ class AIInsightsService:
             }
 
         prompt = (
-            "Generate a personalized 3-step study plan for a student.\n\n"
+            "You are an expert GRE tutor. Based on the student's performance, "
+            "generate a concise 3-step study plan to improve weak areas.\n\n"
             f"Performance Data:\n"
-            f"  - User ID: {user_id}\n"
-            f"  - Topics Missed: {', '.join(topics_missed) if topics_missed else 'None'}\n"
-            f"  - Difficulty Level Reached (ability score): {ability_score:.2f}\n"
+            f"  - Ability Score Reached: {ability_score:.2f}\n"
             f"  - Correct Answers: {correct_answers}\n"
-            f"  - Wrong Answers: {wrong_answers}\n\n"
-            "Focus the plan on improving the weak areas.\n\n"
-            "Return JSON with keys:\n"
-            "  user_id, summary, weak_areas (list), "
-            "three_step_plan (list of {step_number, title, description, resources}), "
-            "estimated_time (string)."
+            f"  - Wrong Answers: {wrong_answers}\n"
+            f"  - Topics Missed: {', '.join(topics_missed) if topics_missed else 'None'}\n\n"
+            "Ensure the function returns JSON strictly in this format:\n"
+            "{\n"
+            '  "study_plan": [\n'
+            '    "step 1",\n'
+            '    "step 2",\n'
+            '    "step 3"\n'
+            "  ]\n"
+            "}"
         )
 
         try:
@@ -109,9 +108,9 @@ class AIInsightsService:
             plan_data = json.loads(response.choices[0].message.content)
             logger.info("Study plan generated successfully for user_id=%s", user_id)
 
-            # Ensure exactly 3 steps
-            if "three_step_plan" in plan_data:
-                plan_data["three_step_plan"] = plan_data["three_step_plan"][:3]
+            # Ensure exactly 3 steps if possible
+            if "study_plan" in plan_data and isinstance(plan_data["study_plan"], list):
+                plan_data["study_plan"] = plan_data["study_plan"][:3]
 
             return plan_data
 

@@ -22,6 +22,7 @@ from ..models.session_model import (
     SessionResponse,
     SubmitAnswerRequest,
     SubmitAnswerResponse,
+    SessionSummaryResponse,
 )
 from ..models.question_model import Question
 from ..services.adaptive_engine import adaptive_engine
@@ -229,6 +230,7 @@ async def get_study_plan(
     if not session.answered_questions:
         raise HTTPException(status_code=400, detail="No answers submitted yet")
 
+    # Fetch summary for AI context
     plan = await ai_insights_service.generate_study_plan(
         user_id=session.user_id,
         topics_missed=session.topics_missed,
@@ -237,3 +239,53 @@ async def get_study_plan(
         wrong_answers=session.wrong_count,
     )
     return plan
+
+
+# ── GET /session-summary/{session_id} ─────────────────────────────────
+
+@router.get("/session-summary/{session_id}", response_model=SessionSummaryResponse)
+async def get_session_summary(
+    session_id: str,
+    db=Depends(get_database),
+) -> SessionSummaryResponse:
+    """
+    [Bonus Feature] Returns a performance summary for a given session.
+    """
+    oid = _validate_object_id(session_id, "session_id")
+    session_doc = await db.user_sessions.find_one({"_id": oid})
+    if not session_doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = UserSession(**session_doc)
+    
+    return SessionSummaryResponse(
+        ability_score=round(session.ability_score, 2),
+        correct_answers=session.correct_count,
+        wrong_answers=session.wrong_count,
+        weak_topics=list(set(session.topics_missed))
+    )
+
+
+# ── GET /session-summary/{session_id} ─────────────────────────────────
+
+@router.get("/session-summary/{session_id}", response_model=SessionSummaryResponse)
+async def get_session_summary(
+    session_id: str,
+    db=Depends(get_database),
+) -> SessionSummaryResponse:
+    """
+    [Bonus Feature] Returns a performance summary for a given session.
+    """
+    oid = _validate_object_id(session_id, "session_id")
+    session_doc = await db.user_sessions.find_one({"_id": oid})
+    if not session_doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = UserSession(**session_doc)
+    
+    return SessionSummaryResponse(
+        ability_score=round(session.ability_score, 2),
+        correct_answers=session.correct_count,
+        wrong_answers=session.wrong_count,
+        weak_topics=list(set(session.topics_missed))
+    )

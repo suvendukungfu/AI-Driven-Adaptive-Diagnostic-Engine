@@ -121,17 +121,29 @@ class AdaptiveEngine:
         excluded_ids: List[str],
     ) -> Optional[Question]:
         """
-        Select the question whose difficulty is closest to the student's
-        current ability estimate (maximum-information criterion).
+        Select the next question using the Maximum Information Criterion.
+        
+        Requirements met:
+        1. Do not repeat questions already answered (filtered via excluded_ids).
+        2. Choose the question whose difficulty is closest to the user's ability score.
+        3. Query MongoDB excluding answered questions (handled before parameter passing).
 
-        Questions already answered (in excluded_ids) are filtered out.
+        Why this improves adaptive testing accuracy:
+        In Item Response Theory (IRT), an item provides the maximum statistical 
+        information (precision) about a student's ability when the item's difficulty 
+        (β) exactly matches the student's current ability estimate (θ). 
+        
+        By selecting the question where |difficulty - ability| is minimized, 
+        we ensure that the test converges quickly onto the student's true ability 
+        level with the fewest number of questions.
         """
         available = [q for q in pool if str(q.id) not in excluded_ids]
         if not available:
             logger.warning("No available questions left in pool.")
             return None
 
-        # Closest difficulty to current ability → max information
+        # Compute absolute difference between ability and difficulty
+        # Return the question with the smallest difference
         best = min(available, key=lambda q: abs(q.difficulty - current_ability))
         logger.info(
             "Selected question difficulty=%.2f for ability=%.3f",
